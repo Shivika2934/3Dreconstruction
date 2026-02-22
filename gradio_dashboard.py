@@ -9,6 +9,7 @@ Features:
 - 3D depth estimation using MiDaS
 - Point cloud extraction and mesh generation
 - Distance calculation between person and objects
+- 2D vs 3D distance comparison analysis
 - Safety warnings based on proximity thresholds
 - Real-time visualization and results display
 """
@@ -535,6 +536,7 @@ def process_image(image_input, progress=gr.Progress()):
             det_overlay,
             depth_vis, 
             "## ⏳ Reconstruction in progress...\n\nPlease wait while 3D meshes are being generated.",
+            "## ⏳ 2D vs 3D comparison in progress...\n\nPreparing distance table and explanation.",
             early_summary,
             gr.update(choices=[], value=None, interactive=False),
             {},
@@ -631,6 +633,7 @@ def process_image(image_input, progress=gr.Progress()):
         # Calculate distances and warnings (match CLI method exactly)
         print("\n📏 Calculating distances...")
         distance_results = []
+        comparison_rows = []
         warnings_text = []
         
         # Find person
@@ -646,6 +649,19 @@ def process_image(image_input, progress=gr.Progress()):
             # Calculate person's 3D center
             person_center = np.mean(person_points, axis=0)
             person_x, person_y, person_z = person_center
+            person_bbox = None
+            for obj_info in objects_data:
+                if obj_info['class_name'].lower() == 'person':
+                    person_bbox = obj_info['bbox']
+                    break
+
+            image_diagonal = float(np.sqrt((W ** 2) + (H ** 2)))
+            if person_bbox is not None:
+                px1, py1, px2, py2 = person_bbox
+                person_cx_2d = (px1 + px2) / 2.0
+                person_cy_2d = (py1 + py2) / 2.0
+            else:
+                person_cx_2d, person_cy_2d = W / 2.0, H / 2.0
             
             for obj_info in objects_data:
                 if obj_info['class_name'].lower() == 'person':
@@ -657,6 +673,14 @@ def process_image(image_input, progress=gr.Progress()):
                 # Calculate object's 3D center
                 obj_center = np.mean(obj_points, axis=0)
                 obj_x, obj_y, obj_z = obj_center
+
+                # 2D center distance from image-space bounding boxes
+                ox1, oy1, ox2, oy2 = obj_info['bbox']
+                obj_cx_2d = (ox1 + ox2) / 2.0
+                obj_cy_2d = (oy1 + oy2) / 2.0
+                dist_2d_px = float(np.sqrt((obj_cx_2d - person_cx_2d) ** 2 + (obj_cy_2d - person_cy_2d) ** 2))
+                dist_2d_norm = (dist_2d_px / image_diagonal) if image_diagonal > 0 else 0.0
+                depth_gap = float(abs(obj_z - person_z))
                 
                 # Calculate 3D Euclidean distance between centers
                 avg_distance = np.sqrt(
@@ -697,6 +721,15 @@ def process_image(image_input, progress=gr.Progress()):
                         f"(safety threshold: {safety_threshold}m)"
                     )
 
+                comparison_rows.append({
+                    'object': obj_class,
+                    'distance_2d_px': dist_2d_px,
+                    'distance_2d_norm': dist_2d_norm,
+                    'distance_3d_min_m': min_distance,
+                    'distance_3d_avg_m': avg_distance,
+                    'depth_gap_m': depth_gap,
+                })
+
         # Create results table
         results_text = "## 📊 Distance Analysis Results\n\n"
         results_text += "| Object | Min Distance (m) | Avg Distance (m) | Threshold (m) | Status |\n"
@@ -714,6 +747,44 @@ def process_image(image_input, progress=gr.Progress()):
             warnings_section += "✓ No safety warnings - all objects are at safe distance!"
 
         final_results_text = results_text + warnings_section
+
+        # Build 2D vs 3D tab content as table + explanation (no graph)
+        if not comparison_rows:
+            comparison_text = (
+                "## 🔬 2D vs 3D Distance Comparison\n\n"
+                "Not enough objects to compare (need a detected person and at least one other object)."
+            )
+        else:
+            comparison_text = "## 🔬 2D vs 3D Distance Comparison\n\n"
+            comparison_text += "| Object | 2D Distance (px) | 2D (% image diagonal) | 3D Min Distance (m) | 3D Avg Distance (m) | Depth Gap (m) |\n"
+            comparison_text += "|--------|------------------:|----------------------:|--------------------:|--------------------:|--------------:|\n"
+
+            for row in comparison_rows:
+                comparison_text += (
+                    f"| {row['object']} | {row['distance_2d_px']:.1f} | {row['distance_2d_norm']*100:.1f}% | "
+                    f"{row['distance_3d_min_m']:.3f} | {row['distance_3d_avg_m']:.3f} | {row['depth_gap_m']:.3f} |\n"
+                )
+
+            by_2d = [r['object'] for r in sorted(comparison_rows, key=lambda r: r['distance_2d_px'])]
+            by_3d = [r['object'] for r in sorted(comparison_rows, key=lambda r: r['distance_3d_min_m'])]
+            rank_mismatch_count = sum(1 for i in range(min(len(by_2d), len(by_3d))) if by_2d[i] != by_3d[i])
+            avg_depth_gap = float(np.mean([r['depth_gap_m'] for r in comparison_rows])) if comparison_rows else 0.0
+
+            misleading_cases = [
+                r for r in comparison_rows
+                if (r['distance_2d_norm'] < 0.15 and r['distance_3d_min_m'] > SAFETY_THRESHOLD_METERS)
+                or (r['distance_2d_norm'] > 0.35 and r['distance_3d_min_m'] < SAFETY_THRESHOLD_METERS)
+            ]
+
+            comparison_text += "\n### Why 3D Distance Is Better\n"
+            comparison_text += "- **2D distance is pixel-based** and does not include depth, so it cannot represent true physical separation.\n"
+            comparison_text += "- **3D distance uses reconstructed geometry** and gives metric distances in meters, which are physically meaningful.\n"
+            comparison_text += f"- **2D vs 3D nearest-object ranking mismatch:** {rank_mismatch_count} position(s).\n"
+            comparison_text += f"- **Average depth separation across compared objects:** {avg_depth_gap:.3f} m.\n"
+            if misleading_cases:
+                comparison_text += f"- **Misleading 2D cases detected:** {len(misleading_cases)} (objects may look near/far in image but differ in real 3D space).\n"
+            else:
+                comparison_text += "- **In this image**, 2D and 3D orderings are closer, but 3D remains the accurate metric for safety decisions.\n"
 
         # Build mesh outputs for viewer
         mesh_state = {}
@@ -826,6 +897,7 @@ def process_image(image_input, progress=gr.Progress()):
             det_overlay,               # detection overlay
             depth_vis,                 # depth visualization
             final_results_text,        # distance and warning analysis
+            comparison_text,           # 2D vs 3D table + explanation
             summary,                   # summary statistics
             gr.update(
                 choices=mesh_choices,
@@ -846,6 +918,7 @@ def process_image(image_input, progress=gr.Progress()):
         yield (
             None,
             None,
+            f"## Error\n\n{error_msg}",
             f"## Error\n\n{error_msg}",
             f"## Error\n\n{error_msg}",
             gr.update(choices=[], value=None, interactive=False),
@@ -934,6 +1007,11 @@ def create_interface():
                             label="Depth Estimation",
                             type="pil"
                         )
+
+                    with gr.TabItem("2D vs 3D Distance"):
+                        comparison_output = gr.Markdown(
+                            label="2D vs 3D Difference"
+                        )
                     
                     with gr.TabItem("3D Meshes"):
                         gr.Markdown("### 🧊 Reconstructed Objects")
@@ -968,6 +1046,7 @@ def create_interface():
                 detection_output,
                 depth_output,
                 analysis_output,
+                comparison_output,
                 summary_output,
                 mesh_selector,
                 mesh_state,
