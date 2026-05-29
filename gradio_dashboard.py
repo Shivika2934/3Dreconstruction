@@ -1082,21 +1082,27 @@ def create_interface():
 
 
 if __name__ == "__main__":
-    print("\n" + "="*60)
+    import os
+
+    print("\n" + "=" * 60)
     print("🚀 Starting 3D Reconstruction Dashboard")
-    print("="*60)
-    
+    print("=" * 60)
+
     # Create meshes directory if it doesn't exist
     workspace_dir = os.path.dirname(os.path.abspath(__file__))
     meshes_dir = os.path.join(workspace_dir, "gradio_meshes")
     os.makedirs(meshes_dir, exist_ok=True)
     print(f"📁 Mesh output directory: {meshes_dir}")
-    
+
     demo = create_interface()
+
+    port = int(os.environ.get("PORT", 7860))
+    print(f"🌐 Starting server on port {port}")
+
     demo.launch(
-        server_name="127.0.0.1",
-        server_port=7860,
+        server_name="0.0.0.0",
+        server_port=port,
         share=False,
         show_error=True,
-        allowed_paths=[meshes_dir]  # Allow Gradio to serve mesh files
+        allowed_paths=[meshes_dir]
     )
