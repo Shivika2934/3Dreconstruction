@@ -43,9 +43,9 @@ IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.bmp']
 SAFETY_THRESHOLD_METERS = 1.0
 
 # Reconstruction parameters (matching integrated_reconstruction_v2.py)
-POISSON_DEPTH = 7
-MESH_SMOOTHING_ITERATIONS = 4
-OUTLIER_REMOVAL_NEIGHBORS = 50
+POISSON_DEPTH = 7          # lowered from 10 to save memory
+MESH_SMOOTHING_ITERATIONS = 5   # lowered from 15
+OUTLIER_REMOVAL_NEIGHBORS = 20  # lowered from 50
 DENSITY_THRESHOLD_PERCENTILE = 15
 
 # COCO classes
@@ -107,17 +107,25 @@ SAFETY_THRESHOLDS = {
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-# Load MiDaS model
-print("Loading MiDaS depth estimation model...")
-midas = torch.hub.load("intel-isl/MiDaS", "MiDaS_small").to(device).eval()
-midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms")
-transform_depth = midas_transforms.small_transform
+# Models are loaded lazily on first request to reduce startup memory
+_midas = None
+_transform_depth = None
+_yolo_model = None
 
-# Load YOLO model
-print("Loading YOLO object detection model...")
-yolo_model = YOLO("yolov8n.pt")
-
-print("✅ Models loaded successfully!")
+def get_models():
+    """Load models on first use (lazy loading to stay within memory limits)."""
+    global _midas, _transform_depth, _yolo_model
+    if _midas is None:
+        print("Loading MiDaS depth estimation model...")
+        _midas = torch.hub.load("intel-isl/MiDaS", "MiDaS_small", trust_repo=True).to(device).eval()
+        midas_transforms = torch.hub.load("intel-isl/MiDaS", "transforms", trust_repo=True)
+        _transform_depth = midas_transforms.small_transform
+        print("✅ MiDaS loaded!")
+    if _yolo_model is None:
+        print("Loading YOLO object detection model...")
+        _yolo_model = YOLO("yolov8n.pt")
+        print("✅ YOLO loaded!")
+    return _midas, _transform_depth, _yolo_model
 
 
 # =========================
@@ -217,7 +225,7 @@ def create_camera_matrix(H, W, fx=1000, fy=1000):
     return K
 
 
-def extract_object_point_cloud(img_rgb, depth_map, K, object_bbox, n_samples=5000):
+def extract_object_point_cloud(img_rgb, depth_map, K, object_bbox, n_samples=10000):  # lowered from 50000
     """Extract point cloud from detected object."""
     points = backproject_bbox_to_points(object_bbox, depth_map, K, n_samples=n_samples)
     return points
@@ -491,11 +499,25 @@ def process_image(image_input, progress=gr.Progress()):
         print(f"Processing image: {image_path}")
         print(f"{'='*60}")
 
+        # Load models lazily
+        midas, transform_depth, yolo_model = get_models()
+
         # Load image
         progress(0, desc="Loading image...")
         img_bgr, img_rgb = load_image_rgb(image_path)
         H, W = img_rgb.shape[:2]
-        print(f"✓ Image loaded: {W}x{H}")
+
+        # Cap image to 640px to save memory
+        MAX_DIM = 640
+        if max(H, W) > MAX_DIM:
+            scale = MAX_DIM / max(H, W)
+            new_W, new_H = int(W * scale), int(H * scale)
+            img_rgb = cv2.resize(img_rgb, (new_W, new_H))
+            img_bgr = cv2.resize(img_bgr, (new_W, new_H))
+            H, W = new_H, new_W
+            print(f"✓ Image resized to {W}x{H}")
+        else:
+            print(f"✓ Image loaded: {W}x{H}")
 
         # Create camera matrix
         K = create_camera_matrix(H, W)
@@ -507,6 +529,8 @@ def process_image(image_input, progress=gr.Progress()):
         depth_map = depth_from_image(img_rgb, device, midas, transform_depth)
         depth_vis = save_depth_visualization(depth_map)
         print(f"✓ Depth estimated (range: {depth_map.min():.2f}-{depth_map.max():.2f})")
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
 
         # Detect objects
         progress(0.2, desc="Detecting objects...")
@@ -558,7 +582,7 @@ def process_image(image_input, progress=gr.Progress()):
             print(f"\n  [{idx+1}/{len(detections)}] Processing {class_name}...")
             
             # Extract points
-            points = extract_object_point_cloud(img_rgb, depth_map, K, bbox, n_samples=5000)
+            points = extract_object_point_cloud(img_rgb, depth_map, K, bbox, n_samples=50000)
             
             if len(points) < 100:
                 print(f"    ⚠️  Skipped (too few points: {len(points)})")
@@ -853,10 +877,6 @@ def process_image(image_input, progress=gr.Progress()):
                             # Try to read and re-export to clean mesh
                             mesh_read = o3d.io.read_triangle_mesh(mesh_path)
                             o3d.io.write_triangle_mesh(mesh_path, mesh_read, write_vertex_normals=True, write_vertex_colors=True, write_ascii=True)
-                            del mesh
-                            del pcd
-                            import gc
-                            gc.collect()
                             print(f"   Re-exported mesh to remove NaN values")
                 except Exception as check_err:
                     print(f"   (Could not verify NaN in file: {check_err})")
