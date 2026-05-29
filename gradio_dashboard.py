@@ -1123,7 +1123,7 @@ if __name__ == "__main__":
     # Read the environmental variables directly (using standard production fallbacks)
     server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
     # Render's allocated port is typically injected via 'PORT'
-    server_port = int(os.environ.get("PORT", os.environ.get("GRADIO_SERVER_PORT", 7860)))
+    server_port = int(os.environ.get("PORT", os.environ.get("GRADIO_SERVER_PORT", 10000)))
 
     print(f"🌐 Binding on {server_name}:{server_port}")
 
