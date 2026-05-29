@@ -1120,12 +1120,16 @@ if __name__ == "__main__":
     demo = create_interface()
     demo.queue()
 
-    port = int(os.environ.get("PORT", 10000))
-    print(f"🌐 Binding on 0.0.0.0:{port}")
+    # Read the environmental variables directly (using standard production fallbacks)
+    server_name = os.environ.get("GRADIO_SERVER_NAME", "0.0.0.0")
+    # Render's allocated port is typically injected via 'PORT'
+    server_port = int(os.environ.get("PORT", os.environ.get("GRADIO_SERVER_PORT", 7860)))
+
+    print(f"🌐 Binding on {server_name}:{server_port}")
 
     demo.launch(
-        server_name="0.0.0.0",
-        server_port=port,
+        server_name=server_name,
+        server_port=server_port,
         share=False,
         show_error=True,
         allowed_paths=[meshes_dir],
