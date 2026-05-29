@@ -1088,21 +1088,21 @@ if __name__ == "__main__":
     print("🚀 Starting 3D Reconstruction Dashboard")
     print("=" * 60)
 
-    # Create meshes directory if it doesn't exist
     workspace_dir = os.path.dirname(os.path.abspath(__file__))
     meshes_dir = os.path.join(workspace_dir, "gradio_meshes")
     os.makedirs(meshes_dir, exist_ok=True)
     print(f"📁 Mesh output directory: {meshes_dir}")
 
     demo = create_interface()
+    demo.queue()
 
-    port = int(os.environ.get("PORT", 7860))
-    print(f"🌐 Starting server on port {port}")
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🌐 Binding on 0.0.0.0:{port}")
 
     demo.launch(
         server_name="0.0.0.0",
         server_port=port,
         share=False,
         show_error=True,
-        allowed_paths=[meshes_dir]
+        allowed_paths=[meshes_dir],
     )
