@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: 3dreconstruction
+    env: python
+    plan: free
+    buildCommand: pip install -r gradio_requirements.txt
+    startCommand: bash -lc 'export GRADIO_SERVER_NAME=0.0.0.0; export GRADIO_SERVER_PORT=${PORT:-7860}; python gradio_dashboard.py'
+    autoDeploy: true
