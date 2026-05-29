@@ -43,8 +43,8 @@ IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.bmp']
 SAFETY_THRESHOLD_METERS = 1.0
 
 # Reconstruction parameters (matching integrated_reconstruction_v2.py)
-POISSON_DEPTH = 10
-MESH_SMOOTHING_ITERATIONS = 15
+POISSON_DEPTH = 7
+MESH_SMOOTHING_ITERATIONS = 4
 OUTLIER_REMOVAL_NEIGHBORS = 50
 DENSITY_THRESHOLD_PERCENTILE = 15
 
@@ -217,7 +217,7 @@ def create_camera_matrix(H, W, fx=1000, fy=1000):
     return K
 
 
-def extract_object_point_cloud(img_rgb, depth_map, K, object_bbox, n_samples=50000):
+def extract_object_point_cloud(img_rgb, depth_map, K, object_bbox, n_samples=5000):
     """Extract point cloud from detected object."""
     points = backproject_bbox_to_points(object_bbox, depth_map, K, n_samples=n_samples)
     return points
@@ -558,7 +558,7 @@ def process_image(image_input, progress=gr.Progress()):
             print(f"\n  [{idx+1}/{len(detections)}] Processing {class_name}...")
             
             # Extract points
-            points = extract_object_point_cloud(img_rgb, depth_map, K, bbox, n_samples=50000)
+            points = extract_object_point_cloud(img_rgb, depth_map, K, bbox, n_samples=5000)
             
             if len(points) < 100:
                 print(f"    ⚠️  Skipped (too few points: {len(points)})")
@@ -853,6 +853,10 @@ def process_image(image_input, progress=gr.Progress()):
                             # Try to read and re-export to clean mesh
                             mesh_read = o3d.io.read_triangle_mesh(mesh_path)
                             o3d.io.write_triangle_mesh(mesh_path, mesh_read, write_vertex_normals=True, write_vertex_colors=True, write_ascii=True)
+                            del mesh
+                            del pcd
+                            import gc
+                            gc.collect()
                             print(f"   Re-exported mesh to remove NaN values")
                 except Exception as check_err:
                     print(f"   (Could not verify NaN in file: {check_err})")
