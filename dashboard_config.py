@@ -100,11 +100,13 @@ USE_GPU = True
 # =========================
 # GRADIO INTERFACE SETTINGS
 # =========================
-
+# Look for these lines or add them if they don't exist
+DEFAULT_HOST = "0.0.0.0"
+DEFAULT_PORT = 10000
 # Server configuration
 SERVER_NAME = "0.0.0.0"
-SERVER_PORT = 7860
-SHARE = False  # Share link (works with ngrok)
+SERVER_PORT = 10000  # Changed from 7860 to match Render's default port
+SHARE = False        # Keep False (Render handles the public URL)
 SHOW_ERROR = True
 
 # =========================
