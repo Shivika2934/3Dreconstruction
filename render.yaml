@@ -1,8 +1,13 @@
 services:
   - type: web
-    name: 3dreconstruction
+    name: reconstruction-dashboard
     env: python
-    plan: free
     buildCommand: pip install -r gradio_requirements.txt
-    startCommand: bash -lc 'export GRADIO_SERVER_NAME=0.0.0.0; export GRADIO_SERVER_PORT=${PORT:-7860}; python gradio_dashboard.py'
-    autoDeploy: true
+    startCommand: python gradio_dashboard.py
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: GRADIO_SERVER_NAME
+        value: 0.0.0.0
+      - key: GRADIO_SERVER_PORT
+        value: 10000
