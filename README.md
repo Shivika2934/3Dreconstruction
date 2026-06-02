@@ -1,6 +1,16 @@
 # 3D Reconstruction Dashboard (YOLO + MiDaS + Open3D)
 
-This project provides a Gradio dashboard for object-aware 3D reconstruction and distance-based safety analysis from a single RGB image.
+An AI-powered 3D reconstruction system that combines object detection, depth estimation, and mesh generation to analyze spatial relationships and perform distance-based safety assessment from a single RGB image.
+
+## Tech Stack
+- Python
+- YOLOv8
+- MiDaS
+- Open3D
+- Gradio
+- OpenCV
+- NumPy
+- PyTorch
 
 ## Visual pipeline snapshots
 
