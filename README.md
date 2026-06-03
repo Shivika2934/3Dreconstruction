@@ -13,6 +13,11 @@ An AI-powered 3D reconstruction system that combines object detection, depth est
 - NumPy
 - PyTorch
 
+# 3D Scene Reconstruction from 2D Images
+
+🚀 **Live Demo:** https://huggingface.co/spaces/shivi2934/3D-reconstruction
+
+[![Hugging Face Space](https://img.shields.io/badge/🤗%20HuggingFace-Live%20Demo-yellow)](https://huggingface.co/spaces/shivi2934/3D-reconstruction)
 ## Visual pipeline snapshots
 
 ### 1) Input scene
